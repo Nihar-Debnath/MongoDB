@@ -230,6 +230,137 @@ db.users.aggregate([
 * `$group` takes all documents and groups them by `gender`
 * `$sum: 1` adds 1 for every user in each group
 
+
+### 📌 What is `_id` inside `$group` in MongoDB aggregation?
+
+In **MongoDB’s aggregation framework**, the `_id` field inside the `$group` stage **is not the same** as the `_id` field of your original document (like `{ _id: ObjectId("...") }`).
+
+Instead, **`_id` in `$group` defines the *key* by which documents are grouped together**.
+
+
+### 💡 Example:
+
+Suppose your `users` collection looks like this:
+
+```js
+{ _id: 1, name: "John", gender: "male" }
+{ _id: 2, name: "Jane", gender: "female" }
+{ _id: 3, name: "Alex", gender: "male" }
+```
+
+Now your aggregation:
+
+```js
+db.users.aggregate([
+  {
+    $group: {
+      _id: "$gender",               // <- GROUP BY "gender" field
+      totalUsers: { $sum: 1 }       // <- COUNT users per gender
+    }
+  }
+])
+```
+
+**Result:**
+
+```js
+[
+  { _id: "male", totalUsers: 2 },
+  { _id: "female", totalUsers: 1 }
+]
+```
+
+So here:
+
+* `_id: "male"` means this group includes all documents with `gender: "male"`
+* `_id` is just the **group key**, and **you can use any field(s)** (even multiple fields or expressions).
+
+
+### ✅ Is it related to the `_id` of documents?
+
+**No.** It’s **not related** to the `_id` field from the documents unless **you explicitly group by `$_id`**:
+
+```js
+db.users.aggregate([
+  {
+    $group: {
+      _id: "$_id",               // This now groups by each document's _id
+      something: { $sum: 1 }
+    }
+  }
+])
+```
+
+This would return one group per document — which is basically pointless, because `_id` is unique by default.
+
+### 🔁 Summary
+
+| `_id` in `$group`                         | Meaning                                |
+| ----------------------------------------- | -------------------------------------- |
+| `_id: "$gender"`                          | Group by the `gender` field            |
+| `_id: "$_id"`                             | Group by the original document’s `_id` |
+| `_id: { gender: "$gender", age: "$age" }` | Group by multiple fields               |
+
+
+### ✅ What does the `$` sign mean in MongoDB?
+
+The `$` **is used to reference fields** from the input documents.
+
+So:
+
+* `"$gender"` means: **“Use the value of the `gender` field”**
+* `"$age"` means: **“Use the value of the `age` field”**
+* `"$name"` → “Value of `name` field”, and so on.
+
+
+### 🔍 In your example:
+
+```js
+db.users.aggregate([
+  {
+    $group: {
+      _id: "$gender",              // <– "$gender" references the gender field from each document
+      totalUsers: { $sum: 1 }      // <– $sum is an aggregation operator
+    }
+  }
+])
+```
+
+* Here, `"$gender"` tells MongoDB:
+
+  > "Group all documents where the **value of `gender`** is the same."
+
+So if two documents have `gender: "male"`, they go in the same group.
+
+
+### 🔁 Contrast without `$`
+
+If you wrote:
+
+```js
+_id: "gender"
+```
+
+Then **MongoDB would literally use the string `"gender"`** as the group key — not the value of the `gender` field.
+
+Example output:
+
+```js
+{ _id: "gender", totalUsers: 3 }  // ← Not grouped by actual gender, just a label
+```
+
+Which is **not what you want** when grouping by data field values.
+
+
+### 🔧 Summary of `$` usage:
+
+| Expression  | Meaning                                     |
+| ----------- | ------------------------------------------- |
+| `"$field"`  | Value of the field named `field`            |
+| `"$gender"` | Value of the `gender` field                 |
+| `"$age"`    | Value of the `age` field                    |
+| `"gender"`  | Just the string `"gender"`, no field access |
+
 ---
 
 ## ✅ 2. Group by Gender — Get Average Age
@@ -343,3 +474,142 @@ db.users.aggregate([
 | `$group`   | Group and do math (like `GROUP BY`) |
 | `$project` | Select/rename fields in output      |
 | `$sort`    | Order results                       |
+
+
+
+---
+---
+---
+
+
+
+In the `names` field:
+
+```js
+names: { $push: "$name" }
+```
+
+MongoDB is **collecting (pushing) the `name` field values** of all documents in each group into an **array**.
+
+---
+
+### 🔍 Meaning:
+
+For each group (based on `_id: "$age"`), it will:
+
+* Take the value of `name` from each document in the group
+* Add (`$push`) it into the `names` array for that group
+
+---
+
+### ✅ Example:
+
+If the collection is:
+
+```js
+{ name: "Alice", age: 25 }
+{ name: "Bob", age: 25 }
+{ name: "Charlie", age: 30 }
+```
+
+The output will be:
+
+```js
+[
+  { _id: 25, names: ["Alice", "Bob"] },
+  { _id: 30, names: ["Charlie"] }
+]
+```
+
+So `names` becomes a list of names for each `age` group.
+
+
+
+---
+---
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+### 🔍 What is `$$ROOT` in MongoDB?
+
+`$$ROOT` is a **system variable** that represents the **entire input document** currently being processed in the aggregation pipeline.
+
+---
+
+### 🔍 What does this do?
+
+```js
+names: { $push: "$$ROOT" }
+```
+
+This means:
+
+> "For each group (by `age`), push the **entire document** into the `names` array."
+
+So instead of just pushing the `name` field (like before), you're pushing the **full original document**.
+
+---
+
+### ✅ Example:
+
+Assume this collection:
+
+```js
+{ _id: 1, name: "Alice", age: 25, gender: "female" }
+{ _id: 2, name: "Bob", age: 25, gender: "male" }
+{ _id: 3, name: "Charlie", age: 30, gender: "male" }
+```
+
+Aggregation:
+
+```js
+db.users.aggregate([
+  {
+    $group: {
+      _id: "$age",
+      names: { $push: "$$ROOT" }
+    }
+  }
+])
+```
+
+**Result:**
+
+```js
+[
+  {
+    _id: 25,
+    names: [
+      { _id: 1, name: "Alice", age: 25, gender: "female" },
+      { _id: 2, name: "Bob", age: 25, gender: "male" }
+    ]
+  },
+  {
+    _id: 30,
+    names: [
+      { _id: 3, name: "Charlie", age: 30, gender: "male" }
+    ]
+  }
+]
+```
+
+---
+
+### 🔁 Summary:
+
+| Expression        | Meaning                                         |
+| ----------------- | ----------------------------------------------- |
+| `$push: "$name"`  | Push only the `name` field value into the array |
+| `$push: "$$ROOT"` | Push the **entire document** into the array     |
